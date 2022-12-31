@@ -43,7 +43,7 @@ pub use self::{
     sequence_of::{SequenceOf, SequenceOfIter},
     set_of::{SetOf, SetOfIter},
     teletex_string::TeletexStringRef,
-    utc_time::UtcTime,
+    utc_time::{UtcTime, MAX_YEAR},
     utf8_string::Utf8StringRef,
     videotex_string::VideotexStringRef,
 };

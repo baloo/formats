@@ -41,9 +41,11 @@ jobs:
       - run: cargo hack build --target ${{ matrix.target }} --feature-powerset --exclude-features arbitrary,default,std
 
   minimal-versions:
-    uses: RustCrypto/actions/.github/workflows/minimal-versions.yml@master
     with:
         working-directory: ${{ github.workflow }}
+    steps:
+      - *install-zlint
+      - uses: RustCrypto/actions/.github/workflows/minimal-versions.yml@master
 
   test:
     runs-on: ubuntu-latest
@@ -59,6 +61,12 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
       - uses: RustCrypto/actions/cargo-hack-install@master
+      - name: Install zlint &install-zlint
+        run: |
+          wget -O /tmp/zlint.tar.gz https://github.com/zmap/zlint/releases/download/v3.4.1/zlint_3.4.1_Linux_x86_64.tar.gz
+          tar -C /tmp/ -zxf /tmp/zlint.tar.gz --strip-components 1
+          mv /tmp/zlint ${RUNNER_TOOL_CACHE}
+          echo "${RUNNER_TOOL_CACHE}" >> $GITHUB_PATH
       - run: cargo hack test --feature-powerset
 
   fuzz:

@@ -1876,6 +1876,7 @@ dependencies = [
  "rstest",
  "sha-1",
  "sha2",
+ "signature",
  "spki 0.7.0",
  "tempfile",
  "x509-cert-test-support",

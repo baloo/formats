@@ -2,9 +2,16 @@
 
 use alloc::vec;
 use core::fmt;
-use der::asn1::{BitString, OctetString};
+use der::{
+    asn1::{BitString, OctetString},
+    Encode,
+};
 use sha1::{Digest, Sha1};
-use spki::SubjectPublicKeyInfoOwned;
+use signature::{DigestSigner, Keypair, SignatureEncoding, Signer};
+use spki::{
+    AlgorithmIdentifierOwned, DynAssociatedAlgorithmIdentifier, EncodePublicKey,
+    SubjectPublicKeyInfoOwned,
+};
 
 use crate::{
     certificate::{Certificate, TbsCertificate, Version},
@@ -268,14 +275,19 @@ impl From<CertificateVersion> for Version {
 /// )
 /// .expect("Create certificate");
 /// ```
-pub struct CertificateBuilder<'s, S: Signer> {
+pub struct CertificateBuilder<'s, S> {
     tbs: TbsCertificate,
     signer: &'s mut S,
 }
 
-impl<'s, S: Signer> CertificateBuilder<'s, S> {
+impl<'s, S> CertificateBuilder<'s, S>
+where
+    S: Keypair,
+    S::VerifyingKey: EncodePublicKey,
+    S::VerifyingKey: DynAssociatedAlgorithmIdentifier,
+{
     /// Creates a new certificate builder
-    pub fn new(
+    pub fn new<Signature>(
         profile: Profile,
         version: CertificateVersion,
         serial_number: SerialNumber,
@@ -283,10 +295,16 @@ impl<'s, S: Signer> CertificateBuilder<'s, S> {
         subject: Name,
         subject_public_key_info: SubjectPublicKeyInfoOwned,
         signer: &'s mut S,
-    ) -> Result<Self> {
-        let signer_pub = signer.public_key();
+    ) -> Result<Self>
+    where
+        S: Signer<Signature>,
+    {
+        let signer_pub = signer
+            .verifying_key()
+            .to_public_key_der()?
+            .decode_msg::<SubjectPublicKeyInfoOwned>()?;
 
-        let signature_alg = signer.signature_algorithm().identifier;
+        let signature_alg = Signature::algorithm_identifier();
         let issuer = profile.get_issuer(&subject);
 
         validity.not_before.rfc5280_adjust_utc_time()?;
@@ -339,12 +357,18 @@ impl<'s, S: Signer> CertificateBuilder<'s, S> {
     }
 
     /// Run the certificate through the signer and build the end certificate.
-    pub fn build(&mut self) -> Result<core::result::Result<Certificate, S::Err>> {
-        let signature = match self.signer.sign(&self.tbs) {
+    pub fn build<Signature>(
+        &mut self,
+    ) -> Result<core::result::Result<Certificate, signature::Error>>
+    where
+        S: Signer<Signature>,
+        Signature: SignatureEncoding,
+    {
+        let signature = match self.signer.try_sign(&self.tbs.to_der()?) {
             Ok(s) => s,
             Err(e) => return Ok(Err(e)),
         };
-        let signature = BitString::from_bytes(&signature)?;
+        let signature = BitString::from_bytes(signature.to_bytes().as_ref())?;
 
         let cert = Certificate {
             tbs_certificate: self.tbs.clone(),
@@ -354,20 +378,4 @@ impl<'s, S: Signer> CertificateBuilder<'s, S> {
 
         Ok(Ok(cert))
     }
-}
-
-/// Signer to be used to for signing the certificates
-pub trait Signer {
-    /// Error to be returned by the Signer
-    type Err: fmt::Debug;
-
-    /// The signature expected from this signer
-    fn signature_algorithm(&self) -> CertificateSignatureAlgorithmOwned;
-
-    /// The SPKI encoded public key used by this signer
-    fn public_key(&self) -> SubjectPublicKeyInfoOwned;
-
-    /// The sign method should return the signature of the payload.
-    // TODO(baloo): do we need to zeroize that?
-    fn sign(&mut self, input: &TbsCertificate) -> core::result::Result<vec::Vec<u8>, Self::Err>;
 }

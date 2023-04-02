@@ -7,15 +7,11 @@ use der::{
     Encode,
 };
 use sha1::{Digest, Sha1};
-use signature::{DigestSigner, Keypair, SignatureEncoding, Signer};
-use spki::{
-    AlgorithmIdentifierOwned, DynAssociatedAlgorithmIdentifier, EncodePublicKey,
-    SubjectPublicKeyInfoOwned,
-};
+use signature::{Keypair, SignatureEncoding, Signer};
+use spki::{DynAssociatedAlgorithmIdentifier, EncodePublicKey, SubjectPublicKeyInfoOwned};
 
 use crate::{
     certificate::{Certificate, TbsCertificate, Version},
-    constants::CertificateSignatureAlgorithmOwned,
     ext::{
         pkix::{
             AuthorityKeyIdentifier, BasicConstraints, KeyUsage, KeyUsages, SubjectKeyIdentifier,
@@ -27,7 +23,39 @@ use crate::{
     time::Validity,
 };
 
-type Result<T> = core::result::Result<T, der::Error>;
+/// Error type
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum Error {
+    /// ASN.1 DER-related errors.
+    Asn1(der::Error),
+
+    /// Public key errors propagated from the [`spki::Error`] type.
+    PublicKey(spki::Error),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Asn1(err) => write!(f, "ASN.1 error: {}", err),
+            Error::PublicKey(err) => write!(f, "public key error: {}", err),
+        }
+    }
+}
+
+impl From<der::Error> for Error {
+    fn from(err: der::Error) -> Error {
+        Error::Asn1(err)
+    }
+}
+
+impl From<spki::Error> for Error {
+    fn from(err: spki::Error) -> Error {
+        Error::PublicKey(err)
+    }
+}
+
+type Result<T> = core::result::Result<T, Error>;
 
 /// UniqueIds holds the optional attributes `issuerUniqueID` and `subjectUniqueID`
 /// to be filled in the TBSCertificate if version v2 or v3.

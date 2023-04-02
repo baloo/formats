@@ -299,12 +299,12 @@ where
     where
         S: Signer<Signature>,
     {
-        let signer_pub = signer
-            .verifying_key()
+        let verifying_key = signer.verifying_key();
+        let signer_pub = verifying_key
             .to_public_key_der()?
             .decode_msg::<SubjectPublicKeyInfoOwned>()?;
 
-        let signature_alg = Signature::algorithm_identifier();
+        let signature_alg = verifying_key.algorithm_identifier();
         let issuer = profile.get_issuer(&subject);
 
         validity.not_before.rfc5280_adjust_utc_time()?;

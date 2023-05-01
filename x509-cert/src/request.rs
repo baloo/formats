@@ -17,11 +17,12 @@ use der::pem::PemLabel;
 /// Version identifier for certification request information.
 ///
 /// (RFC 2986 designates `0` as the only valid version)
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Enumerated)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Enumerated, Default)]
 #[asn1(type = "INTEGER")]
 #[repr(u8)]
 pub enum Version {
     /// Denotes PKCS#8 v1
+    #[default]
     V1 = 0,
 }
 
@@ -96,7 +97,7 @@ impl<'a> TryFrom<&'a [u8]> for CertReq {
 /// ```
 ///
 /// [RFC 5272 Section 3.1]: https://datatracker.ietf.org/doc/html/rfc5272#section-3.1
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct ExtensionReq(pub Vec<Extension>);
 
 impl AssociatedOid for ExtensionReq {
@@ -104,3 +105,20 @@ impl AssociatedOid for ExtensionReq {
 }
 
 impl_newtype!(ExtensionReq, Vec<Extension>);
+
+use crate::attr::{Attribute, AttributeValue};
+use der::asn1::{Any, SetOfVec};
+
+impl TryFrom<ExtensionReq> for Attribute {
+    type Error = der::Error;
+
+    fn try_from(extension_req: ExtensionReq) -> der::Result<Attribute> {
+        let mut values: SetOfVec<AttributeValue> = Default::default();
+        values.add(Any::encode_from(&extension_req.0.clone())?);
+
+        Ok(Attribute {
+            oid: ExtensionReq::OID,
+            values,
+        })
+    }
+}

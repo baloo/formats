@@ -18,6 +18,7 @@ use crate::{
         AsExtension, Extension, Extensions,
     },
     name::Name,
+    request::{CertReq, CertReqInfo, ExtensionReq},
     serial_number::SerialNumber,
     time::Validity,
 };
@@ -376,5 +377,97 @@ where
         };
 
         Ok(cert)
+    }
+}
+
+pub struct RequestBuilder<'s, S> {
+    info: CertReqInfo,
+    extension_req: ExtensionReq,
+    signer: &'s S,
+}
+
+impl<'s, S> RequestBuilder<'s, S>
+where
+    S: Keypair + DynSignatureAlgorithmIdentifier,
+    S::VerifyingKey: EncodePublicKey,
+{
+    /// Creates a new certificate request builder
+    pub fn new(subject: Name, signer: &'s S) -> Result<Self> {
+        let version = Default::default();
+        let verifying_key = signer.verifying_key();
+        let public_key = verifying_key
+            .to_public_key_der()?
+            .decode_msg::<SubjectPublicKeyInfoOwned>()?;
+        let attributes = Default::default();
+        let extension_req = Default::default();
+
+        Ok(Self {
+            info: CertReqInfo {
+                version,
+                subject,
+                public_key,
+                attributes,
+            },
+            extension_req,
+            signer,
+        })
+    }
+
+    /// Add an extension to this certificate request
+    pub fn add_extension<E: AsExtension>(&mut self, extension: &E) -> Result<()> {
+        let ext = extension.to_extension(&self.info.subject, &self.extension_req.0)?;
+
+        self.extension_req.0.push(ext);
+
+        Ok(())
+    }
+
+    fn finalize(&mut self) -> Result<()> {
+        self.info
+            .attributes
+            .add(self.extension_req.clone().try_into()?);
+        Ok(())
+    }
+
+    /// Run the certificate through the signer and build the end certificate.
+    pub fn build<Signature>(mut self) -> Result<CertReq>
+    where
+        S: Signer<Signature>,
+        Signature: SignatureEncoding,
+    {
+        self.finalize()?;
+
+        let algorithm = self.signer.signature_algorithm_identifier()?;
+        let signature = self.signer.try_sign(&self.info.to_der()?)?;
+        let signature = BitString::from_bytes(signature.to_bytes().as_ref())?;
+
+        let req = CertReq {
+            info: self.info,
+            algorithm,
+            signature,
+        };
+
+        Ok(req)
+    }
+
+    /// Run the certificate through the signer and build the end certificate.
+    pub fn build_with_rng<Signature>(mut self, rng: &mut impl CryptoRngCore) -> Result<CertReq>
+    where
+        S: RandomizedSigner<Signature>,
+        Signature: SignatureEncoding,
+    {
+        self.finalize()?;
+
+        let algorithm = self.signer.signature_algorithm_identifier()?;
+        let signature = self.signer.try_sign_with_rng(rng, &self.info.to_der()?)?;
+        let signature = BitString::from_bytes(signature.to_bytes().as_ref())?;
+
+        let req = CertReq {
+            info: self.info,
+            algorithm,
+            signature,
+        };
+
+        Ok(req)
     }
 }

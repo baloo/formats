@@ -1,6 +1,6 @@
 #![cfg(all(feature = "builder", feature = "pem"))]
 
-use der::{pem::LineEnding, Decode, Encode, EncodePem};
+use der::{asn1::UtcTime, pem::LineEnding, DateTime, Decode, Encode, EncodePem};
 use p256::{pkcs8::DecodePrivateKey, NistP256};
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rsa::pkcs1v15::SigningKey;
@@ -12,16 +12,52 @@ use x509_cert::{
     ext::pkix::{name::GeneralName, SubjectAltName},
     name::Name,
     serial_number::SerialNumber,
-    time::Validity,
+    time::{Time, Validity},
 };
 use x509_cert_test_support::{openssl, zlint};
 
 const RSA_2048_DER_EXAMPLE: &[u8] = include_bytes!("examples/rsa2048-pub.der");
 
 #[test]
+fn invalid_rsa_signature() {
+    let serial_number = SerialNumber::from(42u32);
+    let validity = Validity {
+        not_before: Time::UtcTime(
+            UtcTime::from_date_time(DateTime::new(2023, 05, 03, 22, 25, 20).unwrap()).unwrap(),
+        ),
+        not_after: Time::UtcTime(
+            UtcTime::from_date_time(DateTime::new(2023, 05, 03, 22, 25, 25).unwrap()).unwrap(),
+        ),
+    };
+
+    let profile = Profile::Root;
+    let subject = Name::from_str("CN=World domination corporation,O=World domination Inc,C=US")
+        .unwrap()
+        .to_der()
+        .unwrap();
+    let subject = Name::from_der(&subject).unwrap();
+    let pub_key =
+        SubjectPublicKeyInfoOwned::try_from(RSA_2048_DER_EXAMPLE).expect("get rsa pub key");
+
+    let signer = rsa_signer();
+    let builder =
+        CertificateBuilder::new(profile, serial_number, validity, subject, pub_key, &signer)
+            .expect("Create certificate");
+
+    let certificate = builder.build().unwrap();
+
+    let pem = certificate.to_pem(LineEnding::LF).expect("generate pem");
+    println!("{}", openssl::check_certificate(pem.as_bytes()));
+
+    let ignored = &[];
+    zlint::check_certificate(pem.as_bytes(), ignored);
+}
+
+#[test]
 fn root_ca_certificate() {
     let serial_number = SerialNumber::from(42u32);
     let validity = Validity::from_now(Duration::new(5, 0)).unwrap();
+
     let profile = Profile::Root;
     let subject = Name::from_str("CN=World domination corporation,O=World domination Inc,C=US")
         .unwrap()

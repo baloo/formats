@@ -2,7 +2,7 @@
 
 use alloc::vec::Vec;
 use const_oid::db::{
-    rfc4519::{COUNTRY_NAME, DOMAIN_COMPONENT, SERIAL_NUMBER},
+    rfc4519::{self, COUNTRY_NAME, DOMAIN_COMPONENT, SERIAL_NUMBER},
     DB,
 };
 use core::{
@@ -246,6 +246,14 @@ impl FromStr for AttributeTypeAndValue {
 /// [RFC 4514]: https://datatracker.ietf.org/doc/html/rfc4514
 impl fmt::Display for AttributeTypeAndValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn maybe_st(oid: &ObjectIdentifier) -> Option<&str> {
+            if oid == &rfc4519::ST {
+                Some("st")
+            } else {
+                None
+            }
+        }
+
         let val = match self.value.tag() {
             Tag::PrintableString => PrintableStringRef::try_from(&self.value)
                 .ok()
@@ -260,7 +268,8 @@ impl fmt::Display for AttributeTypeAndValue {
             _ => None,
         };
 
-        if let (Some(key), Some(val)) = (DB.by_oid(&self.oid), val) {
+        if let (Some(key), Some(val)) = (maybe_st(&self.oid).or_else(|| DB.by_oid(&self.oid)), val)
+        {
             write!(f, "{}=", key.to_ascii_uppercase())?;
 
             let mut iter = val.char_indices().peekable();

@@ -31,6 +31,7 @@ rand = "0.8.5"
 rsa = { version = "0.9.6", features = ["sha2"] }
 ecdsa = { version = "0.16.8", features = ["digest", "pem"] }
 p256 = "0.13.0"
+p384 = "0.13.0"
 rstest = "0.18"
 sha2 = { version = "0.10", features = ["oid"] }
 tempfile = "3.5.0"

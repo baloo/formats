@@ -44,6 +44,10 @@ impl BmpString {
         #[allow(clippy::integer_arithmetic)]
         let mut bytes = Vec::with_capacity(utf8.len() * 2);
 
+        if utf8.chars().any(|c| c.len_utf16() != 1) {
+            return Err(Tag::BmpString.value_error());
+        }
+
         for code_point in utf8.encode_utf16() {
             bytes.extend(code_point.to_be_bytes());
         }
@@ -76,6 +80,24 @@ impl BmpString {
         self.as_bytes()
             .chunks_exact(2)
             .map(|chunk| u16::from_be_bytes(chunk.try_into().expect("two bytes")))
+    }
+
+    #[cfg(feature = "hazmat")]
+    /// Create a new [`BmpString`] from bytes.
+    ///
+    /// It bypasses the check for utf16 encoding of its values.
+    pub fn new_unchecked(bytes: impl Into<Box<[u8]>>) -> Result<Self> {
+        let bytes = bytes.into();
+
+        if bytes.len() % 2 != 0 {
+            return Err(Tag::BmpString.length_error());
+        }
+
+        let ret = Self {
+            bytes: bytes.try_into()?,
+        };
+
+        Ok(ret)
     }
 }
 
@@ -131,7 +153,7 @@ impl fmt::Display for BmpString {
 #[cfg(test)]
 mod tests {
     use super::BmpString;
-    use crate::{Decode, Encode};
+    use crate::{Decode, Encode, Tag};
     use alloc::string::ToString;
     use hex_literal::hex;
 
@@ -156,5 +178,16 @@ mod tests {
         let bmp_string = BmpString::from_utf8(EXAMPLE_UTF8).unwrap();
         let encoded = bmp_string.to_der().unwrap();
         assert_eq!(encoded, EXAMPLE_BYTES);
+    }
+
+    #[test]
+    fn encode_errors() {
+        let err = BmpString::from_utf8("🔥");
+        assert_eq!(err, Err(Tag::BmpString.value_error()));
+
+        #[cfg(feature = "hazmat")]
+        {
+            assert!(BmpString::new_unchecked("🔥".as_bytes()).is_ok());
+        }
     }
 }
